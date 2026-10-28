@@ -31,7 +31,14 @@ def notify():
     except Exception as exc:
         errors.append('通知失败：' + str(exc))
     if sys.stdout is not None:
-        print('[提醒] 请手动查看游戏。', *errors, flush=True)
+        # Log output must not break notifications in legacy Windows encodings.
+        text = '[Maple Alert] Please check the game. ' + '; '.join(errors)
+        encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+        try:
+            text = text.encode(encoding, errors='backslashreplace').decode(encoding)
+            print(text, flush=True)
+        except (UnicodeError, OSError, ValueError):
+            pass
     return errors
 
 

@@ -75,5 +75,27 @@ class DesktopNotificationTest(unittest.TestCase):
         self.assertIn('notifications off', errors[1])
 
 
+class LegacyConsoleTest(unittest.TestCase):
+    def test_cp1252_console_with_chinese_errors(self):
+        import io
+        from unittest.mock import Mock, patch
+        import alert
+        buffer = io.BytesIO()
+        stream = io.TextIOWrapper(buffer, encoding='cp1252', errors='strict')
+        sound = Mock(SND_ALIAS=1, SND_ASYNC=2)
+        sound.PlaySound.side_effect = RuntimeError('声音不可用')
+        toast_module = Mock()
+        toast_module.WindowsToaster.side_effect = RuntimeError('通知不可用')
+        with patch.dict('sys.modules', {'winsound': sound, 'windows_toasts': toast_module}):
+            with patch.object(alert, '_toaster', None), patch('sys.stdout', stream):
+                errors = alert.notify()
+        stream.flush()
+        self.assertEqual(len(errors), 2)
+        self.assertIn('声音不可用', errors[0])
+        self.assertIn(b'[Maple Alert]', buffer.getvalue())
+        self.assertIn(bytes([92, 117]), buffer.getvalue())
+        stream.detach()
+
+
 if __name__ == '__main__':
     unittest.main()
