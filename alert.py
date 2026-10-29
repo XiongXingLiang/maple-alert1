@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local screen-only MapleStory dialog reminder. No game/input/network APIs."""
+"""Local screen-only reminder core, compatible with the existing desktop app."""
 import argparse
 import json
 from pathlib import Path
@@ -8,9 +8,59 @@ import time
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = ROOT / 'config.json'
-
-
 _toaster = None
+VERSION = '1.0'
+DEFAULT_THRESHOLD = 0.80
+DEFAULTS_REVISION = 'sound-threshold-080-v1'
+
+
+def make_alarm_wav(path):
+    """Three rising two-tone bursts, with short fades to prevent clicks."""
+    import math
+    import struct
+    import wave
+    rate = 22050
+    samples = bytearray()
+    for _ in range(3):
+        for frequency, duration in [(950, 0.18), (1450, 0.22), (0, 0.16)]:
+            count = round(rate * duration)
+            fade = round(rate * 0.012)
+            for i in range(count):
+                envelope = min(1.0, i / fade, (count - 1 - i) / fade)
+                value = int(24000 * envelope * math.sin(2 * math.pi * frequency * i / rate)) if frequency else 0
+                samples.extend(struct.pack('<h', value))
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix('.tmp.wav')
+    with wave.open(str(temp), 'wb') as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(rate)
+        output.writeframes(samples)
+    temp.replace(path)
+    return path
+
+
+def alarm_sound_file():
+    path = ROOT / 'alarm-three-pairs-v1.wav'
+    if not path.exists():
+        make_alarm_wav(path)
+    return path
+
+
+def migrate_default_threshold():
+    """Migrate the previous 0.88 default once; preserve user custom values."""
+    if not CONFIG.exists():
+        return
+    cfg = json.loads(CONFIG.read_text(encoding='utf-8'))
+    if cfg.get('defaults_revision') == DEFAULTS_REVISION:
+        return
+    if cfg.get('threshold', 0.88) == 0.88:
+        cfg['threshold'] = DEFAULT_THRESHOLD
+    cfg['defaults_revision'] = DEFAULTS_REVISION
+    temp = CONFIG.with_suffix('.defaults.tmp')
+    temp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
+    temp.replace(CONFIG)
 
 
 def notify():
@@ -18,7 +68,7 @@ def notify():
     errors = []
     try:
         import winsound
-        winsound.PlaySound('SystemExclamation', winsound.SND_ALIAS | winsound.SND_ASYNC)
+        winsound.PlaySound(str(alarm_sound_file()), winsound.SND_FILENAME | winsound.SND_ASYNC)
     except Exception as exc:
         errors.append('声音失败：' + str(exc))
     try:
@@ -30,20 +80,19 @@ def notify():
         _toaster.show_toast(toast)
     except Exception as exc:
         errors.append('通知失败：' + str(exc))
+        # A failed notification object must not poison subsequent attempts.
+        _toaster = None
     if sys.stdout is not None:
-        # Log output must not break notifications in legacy Windows encodings.
         text = '[Maple Alert] Please check the game. ' + '; '.join(errors)
         encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
         try:
-            text = text.encode(encoding, errors='backslashreplace').decode(encoding)
-            print(text, flush=True)
+            print(text.encode(encoding, errors='backslashreplace').decode(encoding), flush=True)
         except (UnicodeError, OSError, ValueError):
             pass
     return errors
 
 
 def enable_dpi_awareness():
-    # Must run before MSS/OpenCV create screen objects or windows.
     import ctypes
     try:
         if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
@@ -57,24 +106,54 @@ def enable_dpi_awareness():
 
 
 class Gate:
-    def __init__(self, hits=3, misses=5, cooldown=30):
-        self.hits, self.misses, self.cooldown = hits, misses, cooldown
+    """Alert on a new appearance; repeat persistent targets after cooldown.
+
+    Compatible with Gate(hits, misses, cooldown) used by the existing UI.
+    Confirmed absence starts a fresh episode, independently of cooldown.
+    Rearm by elapsed absence time (0.5 s) or the configured miss count.
+    A brief false negative does not restart the persistent reminder timer.
+    """
+    def __init__(self, hits=3, misses=5, cooldown=30, rearm_seconds=0.5):
+        self.hits, self.misses = max(1, int(hits)), max(1, int(misses))
+        self.cooldown = max(0.0, float(cooldown))
+        self.rearm_seconds = max(0.0, float(rearm_seconds))
         self.yes = self.no = 0
         self.armed = True
         self.last = float('-inf')
+        self.absent_since = None
+
+    def _absence_confirmed(self, now):
+        return self.absent_since is not None and (
+            self.no >= self.misses or now - self.absent_since >= self.rearm_seconds)
 
     def update(self, matched, now):
-        self.yes = self.yes + 1 if matched else 0
-        self.no = 0 if matched else self.no + 1
-        if self.no >= self.misses:
+        if not matched:
+            self.yes = 0
+            self.no += 1
+            if self.absent_since is None:
+                self.absent_since = now
+            if self._absence_confirmed(now):
+                self.armed = True
+            return False
+        # Also evaluate elapsed absence on the next matching sample.
+        if self._absence_confirmed(now):
             self.armed = True
-        if self.armed and self.yes >= self.hits and now - self.last >= self.cooldown:
-            self.armed, self.last = False, now
+        self.absent_since = None
+        self.no = 0
+        self.yes += 1
+        if self.yes < self.hits:
+            return False
+        # The interval only limits repeated alerts within a single appearance.
+        # Keep at least one second between reminders if cooldown is set to zero.
+        if self.armed or now - self.last >= max(1.0, self.cooldown):
+            self.armed = False
+            self.last = now
             return True
         return False
 
 
 def libraries():
+    migrate_default_threshold()
     global cv2, np, mss
     import cv2
     import numpy as np
@@ -83,7 +162,6 @@ def libraries():
 
 def capture(sct, region):
     frame = np.asarray(sct.grab(region))[:, :, :3].copy()
-    # Normalize unexpected capture sizes to the configured pixel coordinates.
     if frame.shape[:2] != (region['height'], region['width']):
         frame = cv2.resize(frame, (region['width'], region['height']), interpolation=cv2.INTER_AREA)
     return frame
@@ -120,13 +198,14 @@ def setup(monitor):
     target.parent.mkdir(exist_ok=True)
     if not save_image(target, template):
         raise ValueError('模板保存失败。')
-    cfg = dict(region=region, templates=['templates/dialog.png'], threshold=0.88,
+    cfg = dict(region=region, templates=['templates/dialog.png'], threshold=DEFAULT_THRESHOLD,
                scales=[0.9, 1.0, 1.1], interval=0.5, hits=3, misses=5, cooldown=30)
     CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
     print('已保存配置和模板。请先使用 check 检查截图，再运行 run。')
 
 
 def load():
+    migrate_default_threshold()
     cfg = json.loads(CONFIG.read_text(encoding='utf-8'))
     r = cfg['region']
     if set(r) != {'left', 'top', 'width', 'height'} or not all(type(v) is int for v in r.values()):
@@ -169,8 +248,7 @@ def score(frame, templates):
         from detector_profile import paired_score
         return paired_score(frame, templates)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    return max(float(cv2.minMaxLoc(cv2.matchTemplate(gray, t, cv2.TM_CCOEFF_NORMED))[1])
-               for t in templates)
+    return max(float(cv2.minMaxLoc(cv2.matchTemplate(gray, t, cv2.TM_CCOEFF_NORMED))[1]) for t in templates)
 
 
 def main():
