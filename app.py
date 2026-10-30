@@ -148,6 +148,18 @@ class App:
         self.dot.create_oval(self.px(2), self.px(2), self.px(13), self.px(13), fill='#75818A', outline='', tags='dot')
         self.dot.pack(side='left', padx=(0, self.px(12)))
         ttk.Label(status_row, textvariable=self.status, style='Status.TLabel').pack(side='left')
+        metrics = ttk.Frame(body)
+        metrics.pack(fill='x', pady=(0, self.px(20)))
+        self.score_label = ttk.Label(metrics, textvariable=self.score)
+        self.score_label.grid(row=0, column=0, sticky='w')
+        threshold_row = ttk.Frame(metrics)
+        threshold_row.grid(row=0, column=1, sticky='e')
+        ttk.Label(threshold_row, text='匹配阈值：').pack(side='left')
+        self.threshold_label = ttk.Label(threshold_row, textvariable=self.threshold)
+        self.threshold_label.pack(side='left')
+        self.reminder_label = ttk.Label(metrics, textvariable=self.last_reminder, style='Muted.TLabel')
+        self.reminder_label.grid(row=1, column=0, columnspan=2, sticky='w', pady=(self.px(8),0))
+        metrics.columnconfigure(0, weight=1)
         self.setup_button = ttk.Button(body, text='1  选择监控区域', command=self.setup)
         self.setup_button.pack(fill='x', pady=(0, self.px(12)))
         self.start_button = ttk.Button(body, text='2  开始监控', style='Primary.TButton', command=self.toggle)
@@ -180,8 +192,8 @@ class App:
         state = ui_state(self.configured, running, self.stopping, self.detected)
         self.status.set(state['status'])
         self.dot.itemconfigure('dot', fill=state['color'])
-        self.setup_button.configure(text='重新选择监控区域' if self.configured else '1  选择监控区域', state='normal' if state['region'] and not self.busy else 'disabled')
-        self.start_button.configure(text='停止监控' if running else '2  开始监控', state='normal' if (state['stop'] or state['start']) and not self.busy else 'disabled')
+        self.setup_button.configure(text='1  重新选择监控区域' if self.configured else '1  选择监控区域', state='normal' if state['region'] and not self.busy else 'disabled')
+        self.start_button.configure(text='2  停止监控' if running else '2  开始监控', state='normal' if (state['stop'] or state['start']) and not self.busy else 'disabled')
         if self.configured or running:
             self.first_hint.pack_forget()
         elif not self.first_hint.winfo_manager():
@@ -238,8 +250,6 @@ class App:
         self.check_button = ttk.Button(actions,text='检查监控画面',command=self.check)
         self.check_button.pack(side='left',padx=(0,self.px(8)))
         ttk.Button(actions,text='测试声音与通知',command=self.test).pack(side='left')
-        ttk.Label(frame,textvariable=self.score).grid(row=5,column=0,columnspan=3,sticky='w')
-        ttk.Label(frame,textvariable=self.last_reminder).grid(row=6,column=0,columnspan=3,sticky='w',pady=self.px(6))
         ttk.Label(frame,textvariable=self.feedback,style='Muted.TLabel',wraplength=self.px(440)).grid(row=7,column=0,columnspan=3,sticky='w')
         ttk.Button(frame,text='打开本地配置文件夹',command=lambda: os.startfile(str(alert.ROOT))).grid(row=8,column=0,columnspan=3,sticky='w',pady=(self.px(16),0))
         bottom=ttk.Frame(frame)
@@ -370,7 +380,7 @@ class App:
             with alert.mss.mss() as sct:
                 frame=alert.capture(sct,cfg['region'])
             value=alert.score(frame,templates)
-            self.score.set('匹配分数：%.3f / 阈值 %.2f'%(value,cfg['threshold']))
+            self.score.set('匹配分数：%.3f'%value)
             self.restore_after_capture()
             top=tk.Toplevel(self.root);top.title('检查监控画面')
             ttk.Label(top,text='确认监控范围正确；没有目标时低分正常。',padding=12).pack()
@@ -430,7 +440,7 @@ class App:
             while True:
                 kind,data=self.events.get_nowait()
                 if kind=='score':
-                    self.score.set('匹配分数：%.3f / 阈值 %.2f'%data)
+                    self.score.set('匹配分数：%.3f'%data[0])
                 elif kind=='target':
                     if self.detected != data:
                         self.detected=data;self.render_state()

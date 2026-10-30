@@ -95,7 +95,7 @@ class WindowsWidgetTest(unittest.TestCase):
     def test_running_controls_and_stop_then_ready(self):
         a=self.make_app(dict(threshold=.8,region=dict(left=0,top=0,width=640,height=400)))
         a.worker=object();a.render_state()
-        self.assertEqual(a.start_button['text'],'停止监控')
+        self.assertEqual(a.start_button['text'],'2  停止监控')
         self.assertEqual(str(a.setup_button['state']),'disabled')
         a.stop();self.assertTrue(a.stop_event.is_set());self.assertEqual(a.status.get(),'正在停止')
         a.worker=None;a.stopping=False;a.render_state()
@@ -114,7 +114,7 @@ class WindowsWidgetTest(unittest.TestCase):
     def test_main_controls_fit_at_150_percent(self):
         a=self.make_app(scale=1.5)
         self.root.update()
-        for w in [a.setup_button,a.start_button,a.settings_button]:
+        for w in [a.setup_button,a.start_button,a.settings_button,a.score_label,a.threshold_label,a.reminder_label]:
             self.assertGreater(w.winfo_width(),20)
             self.assertLessEqual(w.winfo_rootx()+w.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())
             self.assertLessEqual(w.winfo_rooty()+w.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
@@ -122,7 +122,7 @@ class WindowsWidgetTest(unittest.TestCase):
     def test_main_controls_fit_at_125_percent(self):
         a=self.make_app(scale=1.25)
         self.root.update()
-        for w in [a.setup_button,a.start_button]:
+        for w in [a.setup_button,a.start_button,a.score_label,a.threshold_label,a.reminder_label]:
             self.assertLessEqual(w.winfo_rooty()+w.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
 
 
