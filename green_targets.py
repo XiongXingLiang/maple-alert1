@@ -15,7 +15,7 @@ def green_mask(frame):
 
 
 def config_for_region(region):
-    return dict(region=dict(region), profile=PROFILE, threshold=0.88,
+    return dict(region=dict(region), profile=PROFILE, threshold=0.80,
                 scales=list(SCALES), interval=0.25, hits=1, misses=8, cooldown=30)
 
 
@@ -69,3 +69,4 @@ def green_score(frame, variants):
             if aligned(a, b, c, max(h, w)):
                 best = max(best, min(a[2], b[2], c[2]))
     return float(best)
+

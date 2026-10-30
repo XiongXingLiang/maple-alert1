@@ -1,4 +1,4 @@
-name: Build Windows desktop app v1.0
+name: Build MapleAlert V1.0 Permanent
 on:
   push:
   workflow_dispatch:
@@ -10,55 +10,52 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           architecture: x64
-      - name: Apply v1.0 version and default threshold
+      - name: Install build dependencies
+        run: python -m pip install -r requirements.txt "pyinstaller>=6.11,<7"
+      - name: Test reminders and Windows UI
+        run: python -m unittest discover -v
+      - name: Build Windows program with application icon
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name MapleAlert-1.0-Permanent --icon assets/app-icon.ico --add-data "assets;assets" --add-data "COPYRIGHT.txt;." --collect-all windows_toasts --collect-all winrt app.py
+      - name: Smoke test packaged application
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "dist/MapleAlert-1.0-Permanent.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            Get-Content "$env:TEMP/MapleAlert-build-error.txt" -ErrorAction SilentlyContinue
+            throw "Packaged app self-test failed"
+          }
+      - name: Include copyright and third-party licenses
         shell: python {0}
         run: |
           from pathlib import Path
-          changes = {
-              'app.py': [("value='0.88'", "value='0.80'"), ('value="0.88"', 'value="0.80"')],
-              'green_targets.py': [('threshold=0.88', 'threshold=0.80'), ('threshold = 0.88', 'threshold = 0.80')],
-          }
-          pending = []
-          for name, replacements in changes.items():
-              path = Path(name)
-              text = path.read_text(encoding='utf-8')
-              for before, after in replacements:
-                  text = text.replace(before, after)
-              if not any(after in text for before, after in replacements):
-                  raise RuntimeError('Cannot locate default threshold in ' + name)
-              if name == 'app.py':
-                  text = text.replace("root.title('冒险岛 · 测谎仪提醒')", "root.title('冒险岛 · 测谎仪提醒 v1.0')")
-                  text = text.replace('root.title("冒险岛 · 测谎仪提醒")', 'root.title("冒险岛 · 测谎仪提醒 v1.0")')
-                  if '冒险岛 · 测谎仪提醒 v1.0' not in text:
-                      raise RuntimeError('Cannot locate application title for v1.0')
-              compile(text, name, 'exec')
-              pending.append((path, text))
-          for path, text in pending:
-              path.write_text(text, encoding='utf-8')
-          print('UI and new configuration defaults are now 0.80')
-      - name: Install build dependencies
-        run: python -m pip install -r requirements.txt "pyinstaller>=6.11,<7"
-      - name: Test alarm logic
-        run: python -m unittest discover -v
-      - name: Build executable
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name MapleAlert-1.0 --add-data "assets;assets" --collect-all windows_toasts --collect-all winrt app.py
-      - name: Smoke test frozen app
-        shell: pwsh
-        run: |
-          $process = Start-Process -FilePath "dist/MapleAlert-1.0.exe" -ArgumentList "--self-test" -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            Get-Content "$env:TEMP/MapleAlert-build-error.txt" -ErrorAction SilentlyContinue
-            throw "Frozen app self-test failed"
-          }
-      - name: Upload executable
+          import importlib.metadata as metadata
+          import shutil
+          shutil.copyfile('COPYRIGHT.txt', 'dist/COPYRIGHT.txt')
+          root = Path('dist/THIRD_PARTY_LICENSES')
+          root.mkdir(exist_ok=True)
+          for distribution in metadata.distributions():
+              name = distribution.metadata.get('Name', 'unknown')
+              for entry in distribution.files or []:
+                  filename = Path(str(entry)).name.lower()
+                  if filename.startswith(('license', 'licence', 'copying', 'notice')):
+                      source = Path(distribution.locate_file(entry))
+                      if source.is_file():
+                          target = root / name / Path(str(entry)).name
+                          target.parent.mkdir(parents=True, exist_ok=True)
+                          shutil.copyfile(source, target)
+      - name: Upload Windows download
         uses: actions/upload-artifact@v4
         with:
-          name: MapleAlert-1.0-Windows-x64
-          path: dist/MapleAlert-1.0.exe
+          name: MapleAlert-1.0-Permanent-Windows-x64
+          path: |
+            dist/MapleAlert-1.0-Permanent.exe
+            dist/COPYRIGHT.txt
+            dist/THIRD_PARTY_LICENSES/
           if-no-files-found: error
