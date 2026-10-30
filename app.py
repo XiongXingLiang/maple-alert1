@@ -407,7 +407,7 @@ class App:
                 self.events.put(('running',None))
                 while not self.stop_event.is_set():
                     started=time.monotonic()
-                    value=alert.score(alert.capture(sct,cfg['region']),templates)
+                    value=alert.score(alert.capture(sct,cfg['region']),templates,cfg['threshold'])
                     self.events.put(('score',(value,cfg['threshold'])))
                     if gate.update(value>=cfg['threshold'],time.monotonic()):
                         self.events.put(('alert',None))

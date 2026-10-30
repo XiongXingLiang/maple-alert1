@@ -220,6 +220,7 @@ def load():
         raise ValueError('scales 必须为 0.25 到 4 之间的非空列表。')
     if cfg.get('profile') == 'three-green-targets-v1':
         from green_targets import load_variants
+        cfg['interval'] = min(cfg['interval'], 0.1)
         return cfg, load_variants(r, cfg['scales'])
     if cfg.get('profile') == 'tw-prelude-v1':
         from detector_profile import load_variants
@@ -240,10 +241,10 @@ def load():
     return cfg, templates
 
 
-def score(frame, templates):
+def score(frame, templates, threshold=None):
     if isinstance(templates[0], dict) and templates[0].get('kind') == 'green-targets':
         from green_targets import green_score
-        return green_score(frame, templates)
+        return green_score(frame, templates, threshold)
     if isinstance(templates[0], dict):
         from detector_profile import paired_score
         return paired_score(frame, templates)
@@ -285,7 +286,7 @@ def main():
         print('监控中；Ctrl+C 停止。截图只在内存中处理。', flush=True)
         while True:
             started = time.monotonic()
-            value = score(capture(sct, cfg['region']), templates)
+            value = score(capture(sct, cfg['region']), templates, cfg['threshold'])
             print('\r匹配分数 %.3f / %.3f' % (value, cfg['threshold']), end='', flush=True)
             if gate.update(value >= cfg['threshold'], time.monotonic()):
                 notify()
@@ -299,3 +300,4 @@ if __name__ == '__main__':
         print('\n已停止。')
     except Exception as exc:
         raise SystemExit('错误：%s\n若截图失败/黑屏，请使用窗口化或无边框窗口，并检查 check.png。' % exc)
+
