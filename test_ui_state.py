@@ -111,10 +111,46 @@ class WindowsWidgetTest(unittest.TestCase):
         self.assertEqual(a.threshold.get(),'0.93');self.assertFalse(a.busy)
         self.assertNotEqual(a.settings_window.state(),'withdrawn')
 
+    def test_sound_test_does_not_start_recording(self):
+        a=self.make_app()
+        with patch.object(self.alert,'notify',return_value=[]), patch.object(a.recorder,'start') as start:
+            a.test()
+        start.assert_not_called()
+
+    def test_alarm_starts_recording_and_failure_does_not_block_sound(self):
+        a=self.make_app()
+        a.monitor_region=dict(left=0,top=0,width=640,height=400)
+        a.events.put(('alert',None))
+        with patch.object(a.recorder,'start',side_effect=OSError('disk full')) as start, patch.object(self.alert,'notify',return_value=[]) as notify:
+            a.poll()
+        start.assert_called_once_with(a.monitor_region)
+        notify.assert_called_once()
+        self.assertIn('录屏失败',a.recording_status.get())
+        self.assertTrue(a.detected)
+
+    def test_close_waits_for_recording_finalization(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        a=self.make_app()
+        fake=SimpleNamespace(active=True,stop=Mock())
+        a.recorder=fake
+        a.close()
+        fake.stop.assert_called_once()
+        self.assertTrue(a.closing)
+        self.assertTrue(self.root.winfo_exists())
+        fake.active=False
+
+    def test_recording_preference_survives_save(self):
+        cfg=dict(threshold=.91,region=dict(left=0,top=0,width=640,height=400),record_on_alarm=False)
+        a=self.make_app(cfg)
+        self.assertFalse(a.record_on_alarm.get())
+        a.save_settings()
+        self.assertFalse(json.loads(self.config_path.read_text())['record_on_alarm'])
+
     def test_main_controls_fit_at_150_percent(self):
         a=self.make_app(scale=1.5)
         self.root.update()
-        for w in [a.setup_button,a.start_button,a.settings_button,a.score_label,a.threshold_label,a.reminder_label]:
+        for w in [a.setup_button,a.start_button,a.settings_button,a.score_label,a.threshold_label,a.reminder_label,a.recording_label,a.stop_recording_button,a.open_recordings_button]:
             self.assertGreater(w.winfo_width(),20)
             self.assertLessEqual(w.winfo_rootx()+w.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())
             self.assertLessEqual(w.winfo_rooty()+w.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
@@ -122,7 +158,7 @@ class WindowsWidgetTest(unittest.TestCase):
     def test_main_controls_fit_at_125_percent(self):
         a=self.make_app(scale=1.25)
         self.root.update()
-        for w in [a.setup_button,a.start_button,a.score_label,a.threshold_label,a.reminder_label]:
+        for w in [a.setup_button,a.start_button,a.score_label,a.threshold_label,a.reminder_label,a.recording_label,a.stop_recording_button,a.open_recordings_button]:
             self.assertLessEqual(w.winfo_rooty()+w.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
 
 

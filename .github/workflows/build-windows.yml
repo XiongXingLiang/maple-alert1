@@ -38,6 +38,7 @@ jobs:
           import importlib.metadata as metadata
           import shutil
           shutil.copyfile('COPYRIGHT.txt', 'dist/COPYRIGHT.txt')
+          shutil.copyfile('RECORDING_README.txt', 'dist/RECORDING_README.txt')
           root = Path('dist/THIRD_PARTY_LICENSES')
           root.mkdir(exist_ok=True)
           for distribution in metadata.distributions():
@@ -57,5 +58,6 @@ jobs:
           path: |
             dist/MapleAlert-1.0-Permanent.exe
             dist/COPYRIGHT.txt
+            dist/RECORDING_README.txt
             dist/THIRD_PARTY_LICENSES/
           if-no-files-found: error

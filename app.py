@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import alert
+from recorder import ScreenRecorder
 
 TITLE = "冒险岛提醒V1.0（永久版）"
 ASSETS = Path(__file__).resolve().parent / "assets"
@@ -88,6 +89,10 @@ class App:
         self.events = queue.Queue()
         self.stop_event = threading.Event()
         self.worker = None
+        self.recorder = ScreenRecorder(lambda kind, data: self.events.put((kind, data)))
+        self.record_on_alarm = tk.BooleanVar(value=True)
+        self.recording_status = tk.StringVar(value="报警自动录屏 · 手动停止")
+        self.monitor_region = None
         self.busy = False
         self.closing = False
         self.settings_window = None
@@ -164,6 +169,14 @@ class App:
         self.setup_button.pack(fill='x', pady=(0, self.px(12)))
         self.start_button = ttk.Button(body, text='2  开始监控', style='Primary.TButton', command=self.toggle)
         self.start_button.pack(fill='x')
+        recording_row = ttk.Frame(body)
+        recording_row.pack(fill='x', pady=(self.px(14),0))
+        self.recording_label = ttk.Label(recording_row, textvariable=self.recording_status, style='Muted.TLabel')
+        self.recording_label.pack(side='left')
+        self.stop_recording_button = ttk.Button(recording_row, text='停止录制', style='Quiet.TButton', command=self.stop_recording, state='disabled')
+        self.stop_recording_button.pack(side='right')
+        self.open_recordings_button = ttk.Button(body, text='打开录屏文件夹', style='Quiet.TButton', command=self.open_recordings)
+        self.open_recordings_button.pack(anchor='w', pady=(self.px(6),0))
         self.first_hint = ttk.Label(body, text='请先选择监控区域', style='Muted.TLabel')
         self.first_hint.pack(anchor='w', pady=(self.px(10), 0))
         footer = ttk.Frame(root, style='Footer.TFrame', padding=(self.px(26), self.px(12)))
@@ -175,8 +188,11 @@ class App:
                 cfg = json.loads(alert.CONFIG.read_text(encoding='utf-8'))
                 self.threshold.set(str(cfg.get('threshold', .80)))
                 self.configured = 'region' in cfg
+                self.record_on_alarm.set(bool(cfg.get('record_on_alarm', True)))
             except (ValueError, OSError):
                 self.feedback.set('配置无法读取，请重新选择监控区域。')
+        if not self.record_on_alarm.get():
+            self.recording_status.set('报警自动录屏已关闭')
         self.refresh()
         self.render_state()
         root.update_idletasks()
@@ -192,12 +208,13 @@ class App:
         state = ui_state(self.configured, running, self.stopping, self.detected)
         self.status.set(state['status'])
         self.dot.itemconfigure('dot', fill=state['color'])
-        self.setup_button.configure(text='1  重新选择监控区域' if self.configured else '1  选择监控区域', state='normal' if state['region'] and not self.busy else 'disabled')
+        self.setup_button.configure(text='1  重新选择监控区域' if self.configured else '1  选择监控区域', state='normal' if state['region'] and not self.busy and not self.recorder.active else 'disabled')
         self.start_button.configure(text='2  停止监控' if running else '2  开始监控', state='normal' if (state['stop'] or state['start']) and not self.busy else 'disabled')
         if self.configured or running:
             self.first_hint.pack_forget()
         elif not self.first_hint.winfo_manager():
             self.first_hint.pack(anchor='w', pady=(self.px(10), 0))
+        self.stop_recording_button.configure(state='normal' if self.recorder.active and not self.closing else 'disabled')
         for widget in [self.threshold_entry, self.check_button]:
             if widget is not None and widget.winfo_exists():
                 widget.configure(state='disabled' if running or self.busy else 'normal')
@@ -252,8 +269,10 @@ class App:
         ttk.Button(actions,text='测试声音与通知',command=self.test).pack(side='left')
         ttk.Label(frame,textvariable=self.feedback,style='Muted.TLabel',wraplength=self.px(440)).grid(row=7,column=0,columnspan=3,sticky='w')
         ttk.Button(frame,text='打开本地配置文件夹',command=lambda: os.startfile(str(alert.ROOT))).grid(row=8,column=0,columnspan=3,sticky='w',pady=(self.px(16),0))
+        ttk.Checkbutton(frame,text='报警时自动录制监控区域（无声音）',variable=self.record_on_alarm).grid(row=9,column=0,columnspan=3,sticky='w',pady=(self.px(16),0))
+        ttk.Label(frame,text='手动停止后保存 MP4；重复报警不会重复开录。',style='Muted.TLabel').grid(row=10,column=0,columnspan=3,sticky='w',pady=(self.px(6),0))
         bottom=ttk.Frame(frame)
-        bottom.grid(row=9,column=0,columnspan=3,sticky='ew',pady=(self.px(18),0))
+        bottom.grid(row=11,column=0,columnspan=3,sticky='ew',pady=(self.px(18),0))
         ttk.Button(bottom,text='关于',command=self.open_about).pack(side='left')
         ttk.Button(bottom,text='保存设置',command=self.save_settings).pack(side='right')
         frame.columnconfigure(1,weight=1)
@@ -269,7 +288,10 @@ class App:
             if alert.CONFIG.exists():
                 cfg=json.loads(alert.CONFIG.read_text(encoding='utf-8'))
                 cfg['threshold']=value
+                cfg['record_on_alarm']=self.record_on_alarm.get()
                 self.write_config(cfg)
+            if not self.recorder.active:
+                self.recording_status.set('报警自动录屏 · 手动停止' if self.record_on_alarm.get() else '报警自动录屏已关闭')
             self.feedback.set('设置已保存。' if alert.CONFIG.exists() else '阈值已选定，请选择监控区域。')
         except Exception as exc:
             self.error(exc)
@@ -308,6 +330,7 @@ class App:
             raise ValueError('请先选择监控区域。')
         cfg=json.loads(alert.CONFIG.read_text(encoding='utf-8'))
         cfg['threshold']=self.threshold_value()
+        cfg['record_on_alarm']=self.record_on_alarm.get()
         self.write_config(cfg)
         return alert.load()
 
@@ -325,7 +348,7 @@ class App:
         self.restore_settings_after_capture = False
 
     def setup(self):
-        if self.busy or self.worker is not None:
+        if self.busy or self.worker is not None or self.recorder.active:
             return
         if not self.monitors:
             return self.error('没有可用屏幕，请在设置中刷新。')
@@ -351,6 +374,7 @@ class App:
             from green_targets import config_for_region,load_variants
             cfg=config_for_region(region)
             cfg['threshold']=self.threshold_value()
+            cfg['record_on_alarm']=self.record_on_alarm.get()
             load_variants(region,cfg['scales'])
             self.write_config(cfg)
             self.configured=True
@@ -405,6 +429,7 @@ class App:
             cfg,templates=self.config()
         except Exception as exc:
             return self.error(exc)
+        self.monitor_region=dict(cfg['region'])
         self.stop_event.clear();self.stopping=False;self.detected=False
         self.worker=threading.Thread(target=self.monitor_loop,args=(cfg,templates),daemon=True)
         self.render_state()
@@ -435,6 +460,45 @@ class App:
         errors=alert.notify()
         self.feedback.set('测试提醒已发送，请检查声音与通知。' if not errors else '；'.join(errors))
 
+    def open_recordings(self):
+        try:
+            self.recorder.folder.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(self.recorder.folder))
+        except Exception as exc:
+            self.error(exc)
+
+    def stop_recording(self):
+        if self.recorder.active:
+            self.recorder.stop()
+            self.recording_status.set('正在结束录制并保存…')
+            self.stop_recording_button.configure(state='disabled')
+
+    def record_alarm(self):
+        if not self.record_on_alarm.get() or self.monitor_region is None:
+            return
+        try:
+            if self.recorder.start(self.monitor_region):
+                self.recording_status.set('正在启动录屏…')
+                self.render_state()
+        except Exception as exc:
+            self.recording_status.set('录屏失败，请查看设置')
+            self.feedback.set('录屏失败：'+str(exc))
+
+    def recording_event(self, state, value):
+        if state=='starting':
+            self.recording_status.set('正在启动录屏…')
+        elif state=='active':
+            self.recording_status.set('正在录制 · %02d:%02d'%(value//60,value%60))
+        elif state=='saving':
+            self.recording_status.set('正在保存录屏…')
+        elif state=='saved':
+            self.recording_status.set('录屏已保存')
+            self.feedback.set('录屏已保存：'+value)
+        elif state=='error':
+            self.recording_status.set('录屏失败，请查看设置')
+            self.feedback.set('录屏失败：'+value)
+        self.render_state()
+
     def poll(self):
         try:
             while True:
@@ -445,24 +509,27 @@ class App:
                     if self.detected != data:
                         self.detected=data;self.render_state()
                 elif kind=='alert' and not self.stop_event.is_set():
+                    self.record_alarm()
                     self.test();self.detected=True
                     self.last_reminder.set('最近提醒：'+time.strftime('%H:%M:%S'))
                     self.render_state()
+                elif kind=='recording':
+                    self.recording_event(*data)
                 elif kind=='error' and not self.closing:
                     self.error(data)
                 elif kind=='done':
                     self.worker=None;self.stopping=False;self.detected=False;self.render_state()
         except queue.Empty:
             pass
-        if self.closing and self.worker is None:
+        if self.closing and self.worker is None and not self.recorder.active:
             self.root.destroy();return
         self.poll_job=self.root.after(50,self.poll)
 
     def close(self):
         if self.busy:
             return
-        self.closing=True;self.stop_event.set();self.root.withdraw()
-        if self.worker is None:
+        self.closing=True;self.stop_event.set();self.recorder.stop();self.root.withdraw()
+        if self.worker is None and not self.recorder.active:
             if self.poll_job is not None:
                 self.root.after_cancel(self.poll_job)
             self.root.destroy()
@@ -518,6 +585,8 @@ def build_self_test():
             roi = frame[200:200+h, x:x+w]
             roi[mask > 0] = (0, 255, 0)
         assert alert.score(frame, variants) > 0.88
+        from recorder import codec_self_test
+        codec_self_test()
         root = tk.Tk()
         root.withdraw()
         for name in ['app-icon.png', 'app-icon-48.png', 'app-icon.ico']:
