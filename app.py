@@ -497,6 +497,10 @@ class App:
         elif state=='error':
             self.recording_status.set('录屏失败，请查看设置')
             self.feedback.set('录屏失败：'+value)
+            if self.closing:
+                self.closing=False
+                self.root.deiconify()
+                messagebox.showerror('录屏保存失败',str(value)+'\n\n程序保持打开，可查看录屏文件夹和设置中的详情。',parent=self.root)
         self.render_state()
 
     def poll(self):
@@ -535,7 +539,9 @@ class App:
         if self.worker is None and not self.recorder.active:
             if self.poll_job is not None:
                 self.root.after_cancel(self.poll_job)
-            self.root.destroy()
+                self.poll_job=None
+            # Drain already queued save/error events before deciding to exit.
+            self.poll()
 
 def main():
     if sys.platform != 'win32':

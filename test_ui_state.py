@@ -141,6 +141,32 @@ class WindowsWidgetTest(unittest.TestCase):
         self.assertTrue(self.root.winfo_exists())
         fake.active=False
 
+    def test_save_failure_during_close_restores_window_and_details(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        a=self.make_app()
+        fake=SimpleNamespace(active=True,stop=Mock())
+        a.recorder=fake
+        a.close();fake.active=False
+        a.events.put(('recording',('error','rename failed; partial.mp4')))
+        a.events.put(('recording',('idle',None)))
+        with patch.object(self.app_module.messagebox,'showerror') as dialog:
+            a.poll()
+        dialog.assert_called_once()
+        self.assertFalse(a.closing)
+        self.assertTrue(self.root.winfo_exists())
+        self.assertNotEqual(self.root.state(),'withdrawn')
+        self.assertIn('partial.mp4',a.feedback.get())
+
+    def test_close_drains_already_queued_recording_failure(self):
+        a=self.make_app()
+        a.events.put(('recording',('error','pending save failure')))
+        with patch.object(self.app_module.messagebox,'showerror') as dialog:
+            a.close()
+        dialog.assert_called_once()
+        self.assertFalse(a.closing)
+        self.assertTrue(self.root.winfo_exists())
+
     def test_recording_preference_survives_save(self):
         cfg=dict(threshold=.91,region=dict(left=0,top=0,width=640,height=400),record_on_alarm=False)
         a=self.make_app(cfg)
