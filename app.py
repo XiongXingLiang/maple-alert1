@@ -510,7 +510,10 @@ class App:
                         self.detected=data;self.render_state()
                 elif kind=='alert' and not self.stop_event.is_set():
                     self.record_alarm()
-                    self.test();self.detected=True
+                    notification_errors=alert.notify()
+                    if notification_errors:
+                        self.feedback.set('；'.join([self.feedback.get()]+notification_errors).strip('；'))
+                    self.detected=True
                     self.last_reminder.set('最近提醒：'+time.strftime('%H:%M:%S'))
                     self.render_state()
                 elif kind=='recording':

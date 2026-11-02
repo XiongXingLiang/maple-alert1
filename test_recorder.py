@@ -85,6 +85,17 @@ class RecorderTest(unittest.TestCase):
             self.assertLess(abs(duration-elapsed),.20)
         finally:v.release()
 
+    def test_release_exception_never_leaves_active_stuck(self):
+        class Writer:
+            def isOpened(self):return True
+            def write(self,frame):pass
+            def release(self):raise OSError('release failed')
+        self.rec.writer_factory=lambda *args:Writer()
+        self.rec.start(self.region);self.finish()
+        self.assertFalse(self.saved())
+        self.assertTrue(any(data[0]=='error' and 'release failed' in data[1] for kind,data in self.events))
+        self.assertTrue(any(data[0]=='idle' for kind,data in self.events))
+
     def test_actual_mp4_codec_roundtrip(self):
         codec_self_test()
 

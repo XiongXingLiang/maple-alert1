@@ -126,6 +126,7 @@ class WindowsWidgetTest(unittest.TestCase):
         start.assert_called_once_with(a.monitor_region)
         notify.assert_called_once()
         self.assertIn('录屏失败',a.recording_status.get())
+        self.assertIn('disk full',a.feedback.get())
         self.assertTrue(a.detected)
 
     def test_close_waits_for_recording_finalization(self):
