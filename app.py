@@ -528,7 +528,7 @@ class App:
                     self.worker=None;self.stopping=False;self.detected=False;self.render_state()
         except queue.Empty:
             pass
-        if self.closing and self.worker is None and not self.recorder.active:
+        if self.closing and self.worker is None and not self.recorder.active and self.events.empty():
             self.root.destroy();return
         self.poll_job=self.root.after(50,self.poll)
 

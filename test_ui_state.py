@@ -167,6 +167,31 @@ class WindowsWidgetTest(unittest.TestCase):
         self.assertFalse(a.closing)
         self.assertTrue(self.root.winfo_exists())
 
+    def test_error_arriving_at_empty_queue_boundary_is_not_lost(self):
+        import queue
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        a=self.make_app()
+        fake=SimpleNamespace(active=True,stop=Mock())
+        a.recorder=fake;a.close()
+        class BoundaryQueue(queue.Queue):
+            injected=False
+            def get_nowait(self):
+                if not self.injected:
+                    self.injected=True
+                    self.put(('recording',('error','late save failure')))
+                    fake.active=False
+                    raise queue.Empty
+                return super().get_nowait()
+        a.events=BoundaryQueue()
+        with patch.object(self.app_module.messagebox,'showerror') as dialog:
+            a.poll()
+            dialog.assert_not_called()
+            self.assertTrue(self.root.winfo_exists())
+            a.poll()
+        dialog.assert_called_once()
+        self.assertFalse(a.closing)
+
     def test_recording_preference_survives_save(self):
         cfg=dict(threshold=.91,region=dict(left=0,top=0,width=640,height=400),record_on_alarm=False)
         a=self.make_app(cfg)
