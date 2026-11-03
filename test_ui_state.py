@@ -192,6 +192,16 @@ class WindowsWidgetTest(unittest.TestCase):
         dialog.assert_called_once()
         self.assertFalse(a.closing)
 
+    def test_gamebar_test_defers_start_for_returning_to_game(self):
+        a=self.make_app()
+        a.record_on_alarm.set(False)
+        with patch.object(self.root,'after') as after,patch.object(a.recorder,'start',return_value=True) as start:
+            a.test_gamebar_start()
+            self.assertEqual(after.call_args[0][0],5000)
+            start.assert_not_called()
+            after.call_args[0][1]()
+            start.assert_called_once()
+
     def test_recording_preference_survives_save(self):
         cfg=dict(threshold=.91,region=dict(left=0,top=0,width=640,height=400),record_on_alarm=False)
         a=self.make_app(cfg)

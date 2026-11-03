@@ -109,6 +109,14 @@ class GameBarTest(unittest.TestCase):
             self.assertEqual(native_request(threading.Event(),probe=True)['state'],'probe-ok')
         process.terminate.assert_not_called()
 
+    def test_foreground_guard_rejects_reminder_but_allows_other_target(self):
+        from unittest.mock import patch
+        from gamebar import guard_foreground
+        with patch('gamebar.foreground_process',return_value=123):
+            with self.assertRaisesRegex(RuntimeError,'前台'):
+                guard_foreground(123)
+            guard_foreground(456)
+
     def test_process_scope(self):
         self.assertTrue(verified_gamebar_path(r'C:\Program Files\WindowsApps\Microsoft.XboxGamingOverlay_1.0_x64__8wekyb3d8bbwe\GameBar.exe'))
         for p in [r'C:\fake\GameBar.exe',r'C:\Temp\Microsoft.XboxGamingOverlay_fake\GameBar.exe',r'C:\Windows\notepad.exe',r'C:\Microsoft.XboxGamingOverlay_1\game.exe']:

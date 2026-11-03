@@ -3,6 +3,7 @@ from pathlib import Path, PureWindowsPath
 import re
 import sys
 import json
+import os
 import subprocess
 import tempfile
 import time
@@ -177,7 +178,7 @@ class GameBarStarter:
             self.emit('recording', ('idle', None))
 
 
-def invoke_start(controls, cancel):
+def invoke_start(controls, cancel, before_invoke=None):
     if cancel.is_set():
         return dict(state='cancelled')
     action, button = choose_start(controls)
@@ -186,6 +187,8 @@ def invoke_start(controls, cancel):
     if not button.is_visible() or not button.is_enabled() or not START.match(button.window_text().strip()):
         raise RuntimeError('游戏栏按钮状态已变化，未发送请求，请查看捕获面板。')
     # Property reads are remote calls and may block; recheck afterwards.
+    if before_invoke is not None:
+        before_invoke()
     if cancel.is_set():
         return dict(state='cancelled')
     button.iface_invoke.Invoke()
@@ -211,7 +214,7 @@ def native_request(cancel, timeout=12, probe=False):
         command = [sys.executable]
         if not getattr(sys, 'frozen', False):
             command.append(str(Path(__file__).with_name('app.py')))
-        command.extend(['--gamebar-request', str(output)])
+        command.extend(['--gamebar-request', str(output), '--gamebar-owner', str(os.getpid())])
         if probe:
             command.append('--gamebar-probe')
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -241,12 +244,36 @@ def backend_self_test():
     IUIA()
 
 
-def run_gamebar_request(path, probe=False):
+def foreground_process():
+    import ctypes
+    from ctypes import wintypes
+    user32=ctypes.WinDLL('user32',use_last_error=True)
+    user32.GetForegroundWindow.restype=wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes=(wintypes.HWND,ctypes.POINTER(wintypes.DWORD))
+    pid=wintypes.DWORD()
+    window=user32.GetForegroundWindow()
+    if window:
+        user32.GetWindowThreadProcessId(window,ctypes.byref(pid))
+    return pid.value
+
+
+def guard_foreground(owner_pid):
+    if owner_pid and foreground_process() in (0,owner_pid):
+        raise RuntimeError('当前前台是报警器，未启动录制以免录错窗口。请切回冒险岛并保持游戏栏捕获面板可见。')
+
+
+def run_gamebar_request(path, probe=False, owner_pid=0):
     try:
         backend_self_test()
-        result = dict(state='probe-ok') if probe else invoke_start(gamebar_controls(), threading.Event())
+        if probe:
+            result=dict(state='probe-ok')
+        else:
+            guard_foreground(owner_pid)
+            controls=gamebar_controls()
+            guard_foreground(owner_pid)
+            result=invoke_start(controls, threading.Event(),lambda: guard_foreground(owner_pid))
     except Exception as exc:
-        result = dict(state='error', message=str(exc)[:4000])
+        result = dict(state='error', message=(type(exc).__name__+': '+str(exc))[:4000])
     destination = Path(path)
     temporary = destination.with_suffix('.tmp')
     temporary.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')

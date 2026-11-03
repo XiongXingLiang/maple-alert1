@@ -271,7 +271,7 @@ class App:
         ttk.Button(frame,text='打开本地配置文件夹',command=lambda: os.startfile(str(alert.ROOT))).grid(row=8,column=0,columnspan=3,sticky='w',pady=(self.px(16),0))
         ttk.Checkbutton(frame,text='报警时请求 Windows 游戏栏开始录制',variable=self.record_on_alarm).grid(row=9,column=0,columnspan=3,sticky='w',pady=(self.px(16),0))
         ttk.Label(frame,text='先打开游戏栏捕获面板；停止与保存由游戏栏处理。',style='Muted.TLabel').grid(row=10,column=0,columnspan=3,sticky='w',pady=(self.px(6),0))
-        ttk.Button(frame,text='测试游戏栏启动（会实际请求录制）',command=self.record_alarm).grid(row=11,column=0,columnspan=3,sticky='w',pady=(self.px(12),0))
+        ttk.Button(frame,text='测试游戏栏启动（5 秒后实际请求）',command=self.test_gamebar_start).grid(row=11,column=0,columnspan=3,sticky='w',pady=(self.px(12),0))
         bottom=ttk.Frame(frame)
         bottom.grid(row=12,column=0,columnspan=3,sticky='ew',pady=(self.px(18),0))
         ttk.Button(bottom,text='关于',command=self.open_about).pack(side='left')
@@ -471,8 +471,12 @@ class App:
     def stop_recording(self):
         self.feedback.set('请在 Windows 游戏栏中停止录制；报警器不会停止系统录像。')
 
-    def record_alarm(self):
-        if not self.record_on_alarm.get():
+    def test_gamebar_start(self):
+        self.feedback.set('请在 5 秒内切回冒险岛，并保持游戏栏捕获面板可见。')
+        self.root.after(5000,lambda: self.record_alarm(force=True) if not self.closing else None)
+
+    def record_alarm(self,force=False):
+        if not force and not self.record_on_alarm.get():
             self.feedback.set('请先开启游戏栏自动启动选项。')
             return
         try:
@@ -623,7 +627,8 @@ def build_self_test():
 if __name__ == '__main__':
     if '--gamebar-request' in sys.argv:
         from gamebar import run_gamebar_request
-        raise SystemExit(run_gamebar_request(sys.argv[sys.argv.index('--gamebar-request')+1], '--gamebar-probe' in sys.argv))
+        owner_pid=int(sys.argv[sys.argv.index('--gamebar-owner')+1]) if '--gamebar-owner' in sys.argv else 0
+        raise SystemExit(run_gamebar_request(sys.argv[sys.argv.index('--gamebar-request')+1], '--gamebar-probe' in sys.argv, owner_pid))
     if '--self-test' in sys.argv:
         raise SystemExit(build_self_test())
     main()
