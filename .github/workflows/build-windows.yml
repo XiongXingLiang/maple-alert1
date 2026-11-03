@@ -22,7 +22,7 @@ jobs:
       - name: Test reminders and Windows UI
         run: python -m unittest discover -v
       - name: Build Windows program with application icon
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name MapleAlert-1.0-Permanent --icon assets/app-icon.ico --add-data "assets;assets" --add-data "COPYRIGHT.txt;." --collect-all windows_toasts --collect-all winrt app.py
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name MapleAlert-1.0-Permanent --icon assets/app-icon.ico --add-data "assets;assets" --add-data "COPYRIGHT.txt;." --collect-all windows_toasts --collect-all winrt --collect-all pywinauto --collect-all comtypes app.py
       - name: Smoke test packaged application
         shell: pwsh
         run: |

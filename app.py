@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import alert
-from recorder import ScreenRecorder
+from gamebar import GameBarStarter as ScreenRecorder
 
 TITLE = "冒险岛提醒V1.0（永久版）"
 ASSETS = Path(__file__).resolve().parent / "assets"
@@ -91,7 +91,7 @@ class App:
         self.worker = None
         self.recorder = ScreenRecorder(lambda kind, data: self.events.put((kind, data)))
         self.record_on_alarm = tk.BooleanVar(value=True)
-        self.recording_status = tk.StringVar(value="报警自动录屏 · 手动停止")
+        self.recording_status = tk.StringVar(value="报警时请求游戏栏开始录制")
         self.monitor_region = None
         self.busy = False
         self.closing = False
@@ -173,9 +173,9 @@ class App:
         recording_row.pack(fill='x', pady=(self.px(14),0))
         self.recording_label = ttk.Label(recording_row, textvariable=self.recording_status, style='Muted.TLabel')
         self.recording_label.pack(side='left')
-        self.stop_recording_button = ttk.Button(recording_row, text='停止录制', style='Quiet.TButton', command=self.stop_recording, state='disabled')
+        self.stop_recording_button = ttk.Button(recording_row, text='在游戏栏停止', style='Quiet.TButton', command=self.stop_recording, state='disabled')
         self.stop_recording_button.pack(side='right')
-        self.open_recordings_button = ttk.Button(body, text='打开录屏文件夹', style='Quiet.TButton', command=self.open_recordings)
+        self.open_recordings_button = ttk.Button(body, text='打开系统捕获文件夹', style='Quiet.TButton', command=self.open_recordings)
         self.open_recordings_button.pack(anchor='w', pady=(self.px(6),0))
         self.first_hint = ttk.Label(body, text='请先选择监控区域', style='Muted.TLabel')
         self.first_hint.pack(anchor='w', pady=(self.px(10), 0))
@@ -192,7 +192,7 @@ class App:
             except (ValueError, OSError):
                 self.feedback.set('配置无法读取，请重新选择监控区域。')
         if not self.record_on_alarm.get():
-            self.recording_status.set('报警自动录屏已关闭')
+            self.recording_status.set('游戏栏自动启动已关闭')
         self.refresh()
         self.render_state()
         root.update_idletasks()
@@ -214,7 +214,7 @@ class App:
             self.first_hint.pack_forget()
         elif not self.first_hint.winfo_manager():
             self.first_hint.pack(anchor='w', pady=(self.px(10), 0))
-        self.stop_recording_button.configure(state='normal' if self.recorder.active and not self.closing else 'disabled')
+        self.stop_recording_button.configure(state='disabled')
         for widget in [self.threshold_entry, self.check_button]:
             if widget is not None and widget.winfo_exists():
                 widget.configure(state='disabled' if running or self.busy else 'normal')
@@ -269,10 +269,11 @@ class App:
         ttk.Button(actions,text='测试声音与通知',command=self.test).pack(side='left')
         ttk.Label(frame,textvariable=self.feedback,style='Muted.TLabel',wraplength=self.px(440)).grid(row=7,column=0,columnspan=3,sticky='w')
         ttk.Button(frame,text='打开本地配置文件夹',command=lambda: os.startfile(str(alert.ROOT))).grid(row=8,column=0,columnspan=3,sticky='w',pady=(self.px(16),0))
-        ttk.Checkbutton(frame,text='报警时自动录制监控区域（无声音）',variable=self.record_on_alarm).grid(row=9,column=0,columnspan=3,sticky='w',pady=(self.px(16),0))
-        ttk.Label(frame,text='手动停止后保存 MP4；重复报警不会重复开录。',style='Muted.TLabel').grid(row=10,column=0,columnspan=3,sticky='w',pady=(self.px(6),0))
+        ttk.Checkbutton(frame,text='报警时请求 Windows 游戏栏开始录制',variable=self.record_on_alarm).grid(row=9,column=0,columnspan=3,sticky='w',pady=(self.px(16),0))
+        ttk.Label(frame,text='先打开游戏栏捕获面板；停止与保存由游戏栏处理。',style='Muted.TLabel').grid(row=10,column=0,columnspan=3,sticky='w',pady=(self.px(6),0))
+        ttk.Button(frame,text='测试游戏栏启动（会实际请求录制）',command=self.record_alarm).grid(row=11,column=0,columnspan=3,sticky='w',pady=(self.px(12),0))
         bottom=ttk.Frame(frame)
-        bottom.grid(row=11,column=0,columnspan=3,sticky='ew',pady=(self.px(18),0))
+        bottom.grid(row=12,column=0,columnspan=3,sticky='ew',pady=(self.px(18),0))
         ttk.Button(bottom,text='关于',command=self.open_about).pack(side='left')
         ttk.Button(bottom,text='保存设置',command=self.save_settings).pack(side='right')
         frame.columnconfigure(1,weight=1)
@@ -291,7 +292,7 @@ class App:
                 cfg['record_on_alarm']=self.record_on_alarm.get()
                 self.write_config(cfg)
             if not self.recorder.active:
-                self.recording_status.set('报警自动录屏 · 手动停止' if self.record_on_alarm.get() else '报警自动录屏已关闭')
+                self.recording_status.set('报警时请求游戏栏开始录制' if self.record_on_alarm.get() else '游戏栏自动启动已关闭')
             self.feedback.set('设置已保存。' if alert.CONFIG.exists() else '阈值已选定，请选择监控区域。')
         except Exception as exc:
             self.error(exc)
@@ -468,25 +469,28 @@ class App:
             self.error(exc)
 
     def stop_recording(self):
-        if self.recorder.active:
-            self.recorder.stop()
-            self.recording_status.set('正在结束录制并保存…')
-            self.stop_recording_button.configure(state='disabled')
+        self.feedback.set('请在 Windows 游戏栏中停止录制；报警器不会停止系统录像。')
 
     def record_alarm(self):
-        if not self.record_on_alarm.get() or self.monitor_region is None:
+        if not self.record_on_alarm.get():
+            self.feedback.set('请先开启游戏栏自动启动选项。')
             return
         try:
             if self.recorder.start(self.monitor_region):
-                self.recording_status.set('正在启动录屏…')
+                self.recording_status.set('正在查找游戏栏开始按钮…')
                 self.render_state()
         except Exception as exc:
-            self.recording_status.set('录屏失败，请查看设置')
+            self.recording_status.set('游戏栏启动失败，请查看设置')
             self.feedback.set('录屏失败：'+str(exc))
 
     def recording_event(self, state, value):
         if state=='starting':
-            self.recording_status.set('正在启动录屏…')
+            self.recording_status.set('正在查找游戏栏开始按钮…')
+        elif state=='requested':
+            self.recording_status.set('已请求开始录制，请查看游戏栏')
+            self.feedback.set('已调用游戏栏开始按钮；请确认系统录制计时器，停止和保存请在游戏栏操作。')
+        elif state=='already':
+            self.recording_status.set('游戏栏显示正在录制，未重复启动')
         elif state=='active':
             self.recording_status.set('正在录制 · %02d:%02d'%(value//60,value%60))
         elif state=='saving':
@@ -495,12 +499,12 @@ class App:
             self.recording_status.set('录屏已保存')
             self.feedback.set('录屏已保存：'+value)
         elif state=='error':
-            self.recording_status.set('录屏失败，请查看设置')
+            self.recording_status.set('游戏栏启动失败，请查看设置')
             self.feedback.set('录屏失败：'+value)
             if self.closing:
                 self.closing=False
                 self.root.deiconify()
-                messagebox.showerror('录屏保存失败',str(value)+'\n\n程序保持打开，可查看录屏文件夹和设置中的详情。',parent=self.root)
+                messagebox.showerror('游戏栏启动失败',str(value)+'\n\n程序保持打开，请查看游戏栏捕获面板和设置中的详情。',parent=self.root)
         self.render_state()
 
     def poll(self):
@@ -594,8 +598,9 @@ def build_self_test():
             roi = frame[200:200+h, x:x+w]
             roi[mask > 0] = (0, 255, 0)
         assert alert.score(frame, variants) > 0.88
-        from recorder import codec_self_test
-        codec_self_test()
+        from gamebar import native_request
+        gamebar_probe=native_request(threading.Event(), timeout=30, probe=True)
+        assert gamebar_probe['state']=='probe-ok', gamebar_probe
         root = tk.Tk()
         root.withdraw()
         for name in ['app-icon.png', 'app-icon-48.png', 'app-icon.ico']:
@@ -616,6 +621,9 @@ def build_self_test():
 
 
 if __name__ == '__main__':
+    if '--gamebar-request' in sys.argv:
+        from gamebar import run_gamebar_request
+        raise SystemExit(run_gamebar_request(sys.argv[sys.argv.index('--gamebar-request')+1], '--gamebar-probe' in sys.argv))
     if '--self-test' in sys.argv:
         raise SystemExit(build_self_test())
     main()
