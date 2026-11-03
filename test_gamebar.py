@@ -117,6 +117,23 @@ class GameBarTest(unittest.TestCase):
                 guard_foreground(123)
             guard_foreground(456)
 
+    def test_foreground_change_during_pattern_lookup_is_rejected(self):
+        from unittest.mock import Mock,patch
+        from gamebar import invoke_start,guard_foreground
+        state=dict(pid=456);pattern=Mock()
+        class ChangingButton:
+            def is_visible(self):return True
+            def is_enabled(self):return True
+            def window_text(self):return 'Start recording'
+            @property
+            def iface_invoke(self):
+                state['pid']=123
+                return pattern
+        with patch('gamebar.foreground_process',side_effect=lambda:state['pid']):
+            with self.assertRaisesRegex(RuntimeError,'前台'):
+                invoke_start([ChangingButton()],threading.Event(),lambda:guard_foreground(123))
+        pattern.Invoke.assert_not_called()
+
     def test_process_scope(self):
         self.assertTrue(verified_gamebar_path(r'C:\Program Files\WindowsApps\Microsoft.XboxGamingOverlay_1.0_x64__8wekyb3d8bbwe\GameBar.exe'))
         for p in [r'C:\fake\GameBar.exe',r'C:\Temp\Microsoft.XboxGamingOverlay_fake\GameBar.exe',r'C:\Windows\notepad.exe',r'C:\Microsoft.XboxGamingOverlay_1\game.exe']:

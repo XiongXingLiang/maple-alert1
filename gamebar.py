@@ -186,12 +186,14 @@ def invoke_start(controls, cancel, before_invoke=None):
         return dict(state='already')
     if not button.is_visible() or not button.is_enabled() or not START.match(button.window_text().strip()):
         raise RuntimeError('游戏栏按钮状态已变化，未发送请求，请查看捕获面板。')
-    # Property reads are remote calls and may block; recheck afterwards.
+    # Fetching the pattern is another remote UIA call; finish it before
+    # the final foreground/cancellation checks.
+    pattern=button.iface_invoke
     if before_invoke is not None:
         before_invoke()
     if cancel.is_set():
         return dict(state='cancelled')
-    button.iface_invoke.Invoke()
+    pattern.Invoke()
     return dict(state='requested')
 
 
