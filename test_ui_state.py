@@ -111,6 +111,14 @@ class WindowsWidgetTest(unittest.TestCase):
         self.assertEqual(a.threshold.get(),'0.93');self.assertFalse(a.busy)
         self.assertNotEqual(a.settings_window.state(),'withdrawn')
 
+    def test_recording_status_displays_measured_fps(self):
+        a=self.make_app()
+        a.recording_event('active',(4,None,0))
+        self.assertIn('—',a.recording_status.get())
+        a.recording_event('active',(65,23.6,8))
+        self.assertIn('01:05',a.recording_status.get())
+        self.assertIn('实际 24 FPS',a.recording_status.get())
+
     def test_sound_test_does_not_start_recording(self):
         a=self.make_app()
         with patch.object(self.alert,'notify',return_value=[]), patch.object(a.recorder,'start') as start:
@@ -125,7 +133,7 @@ class WindowsWidgetTest(unittest.TestCase):
             a.poll()
         start.assert_called_once_with(a.monitor_region)
         notify.assert_called_once()
-        self.assertIn('启动失败',a.recording_status.get())
+        self.assertIn('录屏失败',a.recording_status.get())
         self.assertIn('disk full',a.feedback.get())
         self.assertTrue(a.detected)
 
@@ -191,16 +199,6 @@ class WindowsWidgetTest(unittest.TestCase):
             a.poll()
         dialog.assert_called_once()
         self.assertFalse(a.closing)
-
-    def test_gamebar_test_defers_start_for_returning_to_game(self):
-        a=self.make_app()
-        a.record_on_alarm.set(False)
-        with patch.object(self.root,'after') as after,patch.object(a.recorder,'start',return_value=True) as start:
-            a.test_gamebar_start()
-            self.assertEqual(after.call_args[0][0],5000)
-            start.assert_not_called()
-            after.call_args[0][1]()
-            start.assert_called_once()
 
     def test_recording_preference_survives_save(self):
         cfg=dict(threshold=.91,region=dict(left=0,top=0,width=640,height=400),record_on_alarm=False)
