@@ -107,7 +107,7 @@ class App:
         self.status = tk.StringVar()
         self.sound_status = tk.StringVar(value="声音：正在检查…")
         self.sound_checking = False
-        self.next_sound_check = 0.0
+        self.sound_check_requested = False
         self.poll_job = None
         self.threshold_entry = self.monitor = self.check_button = None
         root.title(TITLE)
@@ -414,7 +414,6 @@ class App:
             cfg,templates=self.config()
         except Exception as exc:
             return self.error(exc)
-        self.next_sound_check=0
         self.stop_event.clear();self.stopping=False;self.detected=False
         self.worker=threading.Thread(target=self.monitor_loop,args=(cfg,templates),daemon=True)
         self.render_state()
@@ -442,15 +441,14 @@ class App:
         self.stop_event.set();self.stopping=True;self.render_state()
 
     def test(self):
-        self.next_sound_check=0
         errors=alert.notify()
         self.feedback.set('测试提醒已发送，请检查声音与通知。' if not errors else '；'.join(errors))
 
     def request_sound_check(self):
-        if self.sound_checking or self.closing:
+        if self.sound_check_requested or self.closing:
             return
+        self.sound_check_requested=True
         self.sound_checking=True
-        self.next_sound_check=time.monotonic()+3
         def work():
             result=sound_check.check_output()
             self.events.put(('sound',result))
@@ -461,7 +459,7 @@ class App:
             self.sound_status.set('声音：检查无法启动，请测试声音')
 
     def poll(self):
-        if not self.closing and time.monotonic()>=self.next_sound_check:
+        if not self.closing and not self.sound_check_requested:
             self.request_sound_check()
         try:
             while True:

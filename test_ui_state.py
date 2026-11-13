@@ -118,7 +118,6 @@ class WindowsWidgetTest(unittest.TestCase):
     def test_sound_warning_and_recovery_on_homepage(self):
         from sound_check import SoundStatus
         a=self.make_app()
-        a.next_sound_check=float('inf')
         a.events.put(('sound',SoundStatus('warning','声音：系统已静音，请取消静音')))
         a.poll()
         self.assertIn('静音',a.sound_status.get())
@@ -128,12 +127,29 @@ class WindowsWidgetTest(unittest.TestCase):
         self.assertIn('80%',a.sound_status.get())
         self.assertEqual(str(a.sound_label.cget('foreground')),'#75818A')
     def test_only_one_sound_check_can_run(self):
-        a=self.make_app();a.sound_checking=True
+        a=self.make_app();a.sound_check_requested=True
         with patch.object(self.app_module.threading,'Thread') as thread:
             a.request_sound_check()
         thread.assert_not_called()
+    def test_sound_check_runs_only_once_per_launch(self):
+        a=self.make_app()
+        a.sound_check_requested=False
+        with patch.object(self.app_module.threading,'Thread') as thread:
+            a.request_sound_check()
+            a.sound_checking=False
+            a.request_sound_check()
+            a.poll()
+        self.assertEqual(thread.call_count,1)
+        self.assertTrue(a.sound_check_requested)
+    def test_manual_sound_test_does_not_repeat_check(self):
+        a=self.make_app()
+        with patch.object(self.alert,'notify',return_value=[]),patch.object(a,'request_sound_check') as check:
+            a.test()
+        check.assert_not_called()
+        self.assertTrue(a.sound_check_requested)
+
     def test_sound_worker_does_not_touch_tk(self):
-        a=self.make_app();a.sound_checking=False
+        a=self.make_app();a.sound_check_requested=False;a.sound_checking=False
         with patch.object(self.app_module.threading,'Thread') as thread:
             a.request_sound_check()
             target=thread.call_args.kwargs['target']

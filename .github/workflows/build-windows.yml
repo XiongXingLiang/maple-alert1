@@ -54,7 +54,7 @@ jobs:
       - name: Upload Windows download
         uses: actions/upload-artifact@v4
         with:
-          name: MapleAlert-1.0-SoundCheck-NoRecording-Windows-x64
+          name: MapleAlert-1.0-StartupSoundCheck-NoRecording-Windows-x64
           path: |
             dist/MapleAlert-1.0-Permanent.exe
             dist/COPYRIGHT.txt
