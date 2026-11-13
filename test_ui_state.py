@@ -122,11 +122,11 @@ class WindowsWidgetTest(unittest.TestCase):
         a.events.put(('sound',SoundStatus('warning','声音：系统已静音，请取消静音')))
         a.poll()
         self.assertIn('静音',a.sound_status.get())
-        self.assertEqual(a.sound_label.cget('foreground'),'#B34040')
+        self.assertEqual(str(a.sound_label.cget('foreground')),'#B34040')
         a.events.put(('sound',SoundStatus('ready','声音：系统音量 80%')))
         a.poll()
         self.assertIn('80%',a.sound_status.get())
-        self.assertEqual(a.sound_label.cget('foreground'),'#75818A')
+        self.assertEqual(str(a.sound_label.cget('foreground')),'#75818A')
     def test_only_one_sound_check_can_run(self):
         a=self.make_app();a.sound_checking=True
         with patch.object(self.app_module.threading,'Thread') as thread:

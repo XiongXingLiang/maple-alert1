@@ -33,7 +33,7 @@ class SoundCheckTest(unittest.TestCase):
     def test_com_uninitializes_on_query_error(self):
         import sys
         fake=SimpleNamespace(CoInitialize=Mock(),CoUninitialize=Mock())
-        with patch.object(sys,'platform','win32'),patch.dict(sys.modules,{'comtypes':fake}),patch('sound_check.read_output',side_effect=OSError()):
+        with patch.object(sys,'platform','win32'),patch('sound_check._comtypes',fake),patch('sound_check.read_output',side_effect=OSError()):
             self.assertEqual(check_output().state,'unknown')
         fake.CoUninitialize.assert_called_once()
 

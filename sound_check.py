@@ -1,6 +1,16 @@
 """Read-only default Windows audio-output checks; never changes volume."""
 from dataclasses import dataclass
 import math
+import sys
+
+# comtypes initializes its importing thread once. Preload on the UI thread,
+# leaving every worker responsible for exactly one explicit COM pair.
+_comtypes = None
+if sys.platform == 'win32':
+    try:
+        import comtypes as _comtypes
+    except Exception:
+        pass
 
 @dataclass(frozen=True)
 class SoundStatus:
@@ -33,16 +43,16 @@ def check_output(reader=None):
     if reader is not None:
         try:return reader()
         except Exception:return SoundStatus('unknown','声音：检查失败，请测试声音并检查播放设备')
-    import sys
     if sys.platform != 'win32':
         return SoundStatus('unknown','声音：仅支持 Windows 检查')
     initialized=False
     try:
-        import comtypes
-        comtypes.CoInitialize()
+        if _comtypes is None:
+            raise RuntimeError("audio COM library unavailable")
+        _comtypes.CoInitialize()
         initialized=True
         return read_output()
     except Exception:
         return SoundStatus('unknown','声音：无法确认，请测试声音并检查播放设备')
     finally:
-        if initialized:comtypes.CoUninitialize()
+        if initialized:_comtypes.CoUninitialize()
