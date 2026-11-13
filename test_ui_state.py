@@ -47,6 +47,9 @@ class WindowsWidgetTest(unittest.TestCase):
         import tkinter as tk
         import app,alert
         self.app_module,self.alert=app,alert
+        from sound_check import SoundStatus
+        self.patch_sound=patch.object(app.sound_check,'check_output',return_value=SoundStatus('ready','声音：系统音量 80% · 请测试确认可听见'))
+        self.patch_sound.start()
         self.temp=tempfile.TemporaryDirectory()
         self.config_path=Path(self.temp.name)/'config.json'
         self.patch_config=patch.object(alert,'CONFIG',self.config_path);self.patch_config.start()
@@ -71,6 +74,7 @@ class WindowsWidgetTest(unittest.TestCase):
             self.app.worker=None;self.app.busy=False;self.app.close()
         else:
             self.root.destroy()
+        self.patch_sound.stop()
         self.patch_refresh.stop();self.patch_root.stop();self.patch_config.stop();self.temp.cleanup()
 
     def test_no_configuration_disables_start(self):
@@ -111,10 +115,36 @@ class WindowsWidgetTest(unittest.TestCase):
         self.assertEqual(a.threshold.get(),'0.93');self.assertFalse(a.busy)
         self.assertNotEqual(a.settings_window.state(),'withdrawn')
 
+    def test_sound_warning_and_recovery_on_homepage(self):
+        from sound_check import SoundStatus
+        a=self.make_app()
+        a.next_sound_check=float('inf')
+        a.events.put(('sound',SoundStatus('warning','声音：系统已静音，请取消静音')))
+        a.poll()
+        self.assertIn('静音',a.sound_status.get())
+        self.assertEqual(a.sound_label.cget('foreground'),'#B34040')
+        a.events.put(('sound',SoundStatus('ready','声音：系统音量 80%')))
+        a.poll()
+        self.assertIn('80%',a.sound_status.get())
+        self.assertEqual(a.sound_label.cget('foreground'),'#75818A')
+    def test_only_one_sound_check_can_run(self):
+        a=self.make_app();a.sound_checking=True
+        with patch.object(self.app_module.threading,'Thread') as thread:
+            a.request_sound_check()
+        thread.assert_not_called()
+    def test_sound_worker_does_not_touch_tk(self):
+        a=self.make_app();a.sound_checking=False
+        with patch.object(self.app_module.threading,'Thread') as thread:
+            a.request_sound_check()
+            target=thread.call_args.kwargs['target']
+        with patch.object(a.sound_status,'set') as set_text:
+            target()
+        set_text.assert_not_called()
+
     def test_main_controls_fit_at_150_percent(self):
         a=self.make_app(scale=1.5)
         self.root.update()
-        for w in [a.setup_button,a.start_button,a.settings_button,a.score_label,a.threshold_label,a.reminder_label]:
+        for w in [a.setup_button,a.start_button,a.settings_button,a.score_label,a.threshold_label,a.reminder_label,a.sound_label]:
             self.assertGreater(w.winfo_width(),20)
             self.assertLessEqual(w.winfo_rootx()+w.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())
             self.assertLessEqual(w.winfo_rooty()+w.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
@@ -122,7 +152,7 @@ class WindowsWidgetTest(unittest.TestCase):
     def test_main_controls_fit_at_125_percent(self):
         a=self.make_app(scale=1.25)
         self.root.update()
-        for w in [a.setup_button,a.start_button,a.score_label,a.threshold_label,a.reminder_label]:
+        for w in [a.setup_button,a.start_button,a.score_label,a.threshold_label,a.reminder_label,a.sound_label]:
             self.assertLessEqual(w.winfo_rooty()+w.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
 
 

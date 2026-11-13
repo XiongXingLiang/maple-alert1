@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import alert
+import sound_check
 
 TITLE = "冒险岛提醒V1.0（永久版）"
 ASSETS = Path(__file__).resolve().parent / "assets"
@@ -104,6 +105,9 @@ class App:
         self.last_reminder = tk.StringVar(value='最近提醒：—')
         self.feedback = tk.StringVar(value='')
         self.status = tk.StringVar()
+        self.sound_status = tk.StringVar(value="声音：正在检查…")
+        self.sound_checking = False
+        self.next_sound_check = 0.0
         self.poll_job = None
         self.threshold_entry = self.monitor = self.check_button = None
         root.title(TITLE)
@@ -160,6 +164,11 @@ class App:
         self.reminder_label = ttk.Label(metrics, textvariable=self.last_reminder, style='Muted.TLabel')
         self.reminder_label.grid(row=1, column=0, columnspan=2, sticky='w', pady=(self.px(8),0))
         metrics.columnconfigure(0, weight=1)
+        sound_row = ttk.Frame(body)
+        sound_row.pack(fill='x', pady=(0,self.px(16)))
+        self.sound_label = ttk.Label(sound_row,textvariable=self.sound_status,style='Muted.TLabel')
+        self.sound_label.pack(side='left',fill='x',expand=True)
+        ttk.Button(sound_row,text='测试声音',style='Quiet.TButton',command=self.test).pack(side='right')
         self.setup_button = ttk.Button(body, text='1  选择监控区域', command=self.setup)
         self.setup_button.pack(fill='x', pady=(0, self.px(12)))
         self.start_button = ttk.Button(body, text='2  开始监控', style='Primary.TButton', command=self.toggle)
@@ -405,6 +414,7 @@ class App:
             cfg,templates=self.config()
         except Exception as exc:
             return self.error(exc)
+        self.next_sound_check=0
         self.stop_event.clear();self.stopping=False;self.detected=False
         self.worker=threading.Thread(target=self.monitor_loop,args=(cfg,templates),daemon=True)
         self.render_state()
@@ -432,14 +442,36 @@ class App:
         self.stop_event.set();self.stopping=True;self.render_state()
 
     def test(self):
+        self.next_sound_check=0
         errors=alert.notify()
         self.feedback.set('测试提醒已发送，请检查声音与通知。' if not errors else '；'.join(errors))
 
+    def request_sound_check(self):
+        if self.sound_checking or self.closing:
+            return
+        self.sound_checking=True
+        self.next_sound_check=time.monotonic()+3
+        def work():
+            result=sound_check.check_output()
+            self.events.put(('sound',result))
+        try:
+            threading.Thread(target=work,daemon=True).start()
+        except RuntimeError:
+            self.sound_checking=False
+            self.sound_status.set('声音：检查无法启动，请测试声音')
+
     def poll(self):
+        if not self.closing and time.monotonic()>=self.next_sound_check:
+            self.request_sound_check()
         try:
             while True:
                 kind,data=self.events.get_nowait()
-                if kind=='score':
+                if kind=='sound':
+                    self.sound_checking=False
+                    if not self.closing:
+                        self.sound_status.set(data.text)
+                        self.sound_label.configure(foreground='#75818A' if data.state=='ready' else '#B34040')
+                elif kind=='score':
                     self.score.set('匹配分数：%.3f'%data[0])
                 elif kind=='target':
                     if self.detected != data:
@@ -494,6 +526,8 @@ def build_self_test():
         import winsound
         import winrt.windows.data.xml.dom
         import winrt.windows.ui.notifications
+        import pycaw.pycaw, comtypes
+        assert sound_check.check_output().state in ['ready','warning','unknown']
         alert.libraries()
         np = alert.np
         template = np.random.default_rng(12).integers(0, 255, (20, 24), dtype=np.uint8)
@@ -541,4 +575,3 @@ if __name__ == '__main__':
     if '--self-test' in sys.argv:
         raise SystemExit(build_self_test())
     main()
-

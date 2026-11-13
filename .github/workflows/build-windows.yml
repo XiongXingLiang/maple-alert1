@@ -22,7 +22,7 @@ jobs:
       - name: Test reminders and Windows UI
         run: python -m unittest discover -v
       - name: Build Windows program with application icon
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name MapleAlert-1.0-Permanent --icon assets/app-icon.ico --add-data "assets;assets" --add-data "COPYRIGHT.txt;." --collect-all windows_toasts --collect-all winrt app.py
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name MapleAlert-1.0-Permanent --icon assets/app-icon.ico --add-data "assets;assets" --add-data "COPYRIGHT.txt;." --collect-all windows_toasts --collect-all winrt --collect-all pycaw --collect-all comtypes app.py
       - name: Smoke test packaged application
         shell: pwsh
         run: |
@@ -38,6 +38,7 @@ jobs:
           import importlib.metadata as metadata
           import shutil
           shutil.copyfile('COPYRIGHT.txt', 'dist/COPYRIGHT.txt')
+          shutil.copyfile('SOUND_CHECK_README.txt', 'dist/SOUND_CHECK_README.txt')
           root = Path('dist/THIRD_PARTY_LICENSES')
           root.mkdir(exist_ok=True)
           for distribution in metadata.distributions():
@@ -53,9 +54,10 @@ jobs:
       - name: Upload Windows download
         uses: actions/upload-artifact@v4
         with:
-          name: MapleAlert-1.0-Permanent-Windows-x64
+          name: MapleAlert-1.0-SoundCheck-NoRecording-Windows-x64
           path: |
             dist/MapleAlert-1.0-Permanent.exe
             dist/COPYRIGHT.txt
+            dist/SOUND_CHECK_README.txt
             dist/THIRD_PARTY_LICENSES/
           if-no-files-found: error
